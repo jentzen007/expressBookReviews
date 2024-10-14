@@ -1,46 +1,90 @@
 const express = require('express');
+const fs = require('fs'); // File system module
 const jwt = require('jsonwebtoken');
-const session = require('express-session');
 const customer_routes = require('./router/auth_users.js').authenticated;
 const genl_routes = require('./router/general.js').general;
 
 const app = express();
+const path = './users.json'; // Path to users file
 
 app.use(express.json());
 
-app.use("/customer", session({
-    secret: "fingerprint_customer",
-    resave: true,
-    saveUninitialized: true
-}));
+// Function to load users from the file
+const loadUsers = () => {
+    if (fs.existsSync(path)) {
+        const fileContent = fs.readFileSync(path);
+        return JSON.parse(fileContent);
+    }
+    return [];
+};
 
-// Login route to authenticate and store token in session
-app.post('/login', (req, res) => {
+// Function to save users to the file
+const saveUsers = (users) => {
+    fs.writeFileSync(path, JSON.stringify(users, null, 2)); // Writing with indentation for readability
+};
+
+// Register new user
+app.post('/register', (req, res) => {
     const { username, password } = req.body;
 
-    // Dummy user for demonstration
-    const user = { id: 1, username: 'user1', password: 'password' };
+    // Load existing users from file
+    let users = loadUsers();
 
-    if (username === user.username && password === user.password) {
-        // Generate a JWT token
-        const token = jwt.sign({ id: user.id, username: user.username }, "your-secret-key", { expiresIn: '1h' });
-        
-        // Store the token in the session
-        req.session.token = token;
+    if (!username || !password) {
+        return res.status(400).json({ message: "Username and password are required" });
+    }
 
-        // Respond to the client
-        res.json({ message: "Login successful", token });
+    const userExists = users.find(user => user.username === username);
+
+    if (userExists) {
+        return res.status(409).json({ message: "User already exists" });
+    }
+
+    // Add the new user
+    users.push({ username, password });
+
+    // Save users back to the file
+    saveUsers(users);
+
+    console.log("Users after registration:", users);
+    return res.status(200).json({ message: "User registered successfully" });
+});
+
+// Login route to authenticate and generate a JWT token
+app.post('/customer/login', (req, res) => {
+    const { username, password } = req.body;
+
+    // Load users from the file
+    let users = loadUsers();
+
+    // Log the users array to ensure users are loaded
+    console.log("Registered users during login:", users);
+
+    // Find the user in the registered users list
+    const user = users.find(u => u.username === username && u.password === password);
+
+    if (user) {
+        const token = jwt.sign({ username: user.username }, "your-secret-key", { expiresIn: '1h' });
+        return res.status(200).json({ message: "Login successful", token });
     } else {
-        res.status(400).send('Invalid credentials');
+        console.log("Login attempt failed. No matching credentials.");
+        return res.status(400).send('Invalid credentials');
     }
 });
 
-// Middleware to authenticate based on the session token
-app.use("/customer/auth/*", function auth(req, res, next) {
-    const token = req.session.token;  // Get the token from the session
+// Middleware to authenticate based on the Authorization header (JWT)
+app.use("/customer/auth/*", (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+
+    if (!authHeader) {
+        return res.status(403).json({ message: "Authentication required." });
+    }
+
+    // Extract the token from the 'Bearer' scheme
+    const token = authHeader.split(' ')[1]; // Get the token part after 'Bearer'
 
     if (!token) {
-        return res.status(403).send("Authentication required.");
+        return res.status(403).json({ message: "Token not found." });
     }
 
     try {
@@ -48,7 +92,7 @@ app.use("/customer/auth/*", function auth(req, res, next) {
         req.user = decoded;  // Store decoded user information in the request
         next();
     } catch (err) {
-        return res.status(401).send("Invalid Token");
+        return res.status(401).json({ message: "Invalid Token" });
     }
 });
 
@@ -56,15 +100,6 @@ app.use("/customer/auth/*", function auth(req, res, next) {
 app.use("/customer", customer_routes);
 app.use("/", genl_routes);
 
-// Optional logout route
-app.post('/logout', (req, res) => {
-    req.session.destroy(err => {
-        if (err) {
-            return res.status(500).send("Logout failed");
-        }
-        res.send("Logged out successfully");
-    });
-});
-
-const PORT = 5000;
+// Start the server
+const PORT = 5001;
 app.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
