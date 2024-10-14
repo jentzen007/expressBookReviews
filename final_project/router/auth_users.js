@@ -92,4 +92,30 @@ regd_users.put('/auth/review/:isbn', authMiddleware, (req, res) => {
     return res.status(200).json({ message: "Review added or modified successfully", reviews: book.reviews });
 });
 
+// Delete a book review added by that particular user (protected route)
+regd_users.delete('/auth/review/:isbn', authMiddleware, (req, res) => {
+    const isbn = req.params.isbn;
+    const username = req.user.username; // Extract username from JWT token
+    const book = books[isbn];
+
+    if (!book) {
+        return res.status(404).json({ message: "Book not found" });
+    }
+
+    if (!Array.isArray(book.reviews) || book.reviews.length === 0) {
+        return res.status(404).json({ message: "No reviews to delete for this book" });
+    }
+
+    // Find the user's review for this book
+    const reviewIndex = book.reviews.findIndex(r => r.username === username);
+
+    if (reviewIndex === -1) {
+        return res.status(403).json({ message: "You have no review to delete for this book" });
+    }
+
+    // Remove the review
+    book.reviews.splice(reviewIndex, 1);
+    return res.status(200).json({ message: "Review deleted successfully", reviews: book.reviews });
+});
+
 module.exports.authenticated = regd_users;
