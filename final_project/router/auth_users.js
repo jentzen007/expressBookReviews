@@ -75,15 +75,17 @@ regd_users.put('/auth/review/:isbn', authMiddleware, (req, res) => {
     }
 
     // Ensure the book has a reviews array
-    if (!book.reviews) {
+    if (!Array.isArray(book.reviews)) {
         book.reviews = [];
     }
 
     const existingReview = book.reviews.find(r => r.username === username);
 
     if (existingReview) {
+        // Modify the existing review
         existingReview.review = review;
     } else {
+        // Add a new review
         book.reviews.push({ username, review });
     }
 
